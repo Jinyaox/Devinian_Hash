@@ -25,14 +25,18 @@ uint64_t get_hashed_share(uint64_t priviate_key, uint64_t coordinate){
 
 uint64_t retrieval(uint64_t hash_cluster, uint64_t share_sum, uint64_t keysum){
     //share_sum is the M0-n except its own m;
-    return hash_cluster ^ share_sum ^ keysum;
+    return (hash_cluster ^ share_sum) ^ keysum;
 }
 
-uint64_t gen_party_indexes(short parties[], int party_num){ //100100 means party 5, 2 are present
+uint64_t gen_party_indexes(int hash_index[], int party_num){ //100100 means party 5, 2 are present
     //the parties give its indexes
     uint64_t result=0;
+    int debug;
     for(int i=0;i<party_num;i++){
-        result |= 1<<parties[i]; //now we get the bit mapping
+        debug=hash_index[i];
+        if(debug!=-1){
+            result |= 1<<debug; //now we get the bit mapping
+        }
     }
     return result;
 }
@@ -42,11 +46,5 @@ uint64_t gen_sum_m(uint64_t m[],int party_num){
     for(int i=0;i<party_num;i++){
         result^=m[i];
     }
-}
-
-uint64_t gen_sum_k(uint64_t k[],int party_num){
-    uint64_t result=0;
-    for(int i=0;i<party_num;i++){
-        result^=k[i];
-    }
+    return result;
 }

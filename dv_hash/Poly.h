@@ -57,7 +57,8 @@ public:
         if(power==1){
             return ((coefficient%T)*(x%T))%T;
         }else{
-            return (x%T)*eval_a_term(coefficient,x,power-1) % T;
+            long temp=eval_a_term(coefficient,x,power-1) % T;
+            return ((x%T)*(temp%T))%T;
         }
     }
 
@@ -65,8 +66,11 @@ public:
     long evaluate (long x){
 
         long result=0;
-        for(long i=1;i<this->k+1;i++){
-            result=result+eval_a_term(this->retrieveCoeff(i),x,i);
+        int degree=(this->k+1);
+        long temp;
+        for(long i=1;i<degree;i++){
+            temp=eval_a_term(this->retrieveCoeff(i),x,i);
+            result=result+temp;
         }
         return result % T;
     }

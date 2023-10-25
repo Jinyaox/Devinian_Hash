@@ -35,12 +35,19 @@ long compute(long lcm, long prime, long number)
 }
 
 
-long CRT(long lcm, long prime[], long number,long n){ //proof of concepts
+long CRT(long lcm, long prime[], long remainder[],long n){ //proof of concepts
     long sum=0;
     for(int i=0;i<n;i++){
-        sum=sum+compute(lcm,prime[i],number);
+        sum=sum+compute(lcm,prime[i],remainder[i]);
     }
     return sum % lcm;
 }
 
 #endif
+
+// int main(){//15
+//     long primes[3]={2,7,11};
+//     long remainders[3]={1,1,4};
+//     int x=CRT(154, primes, remainders,3);
+//     return 0;
+// }

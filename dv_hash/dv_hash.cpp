@@ -49,11 +49,13 @@ class prime_hashes{
     }
 
     short can_gen(int indexes[], uint64_t value, int parties){
-        uint64_t result;
+        uint64_t result=1;
+        int idx=0;
         //check too big? ret 0;
         for(int i=0;i<parties;i++){
-            if(indexes[i]!=-1){
-                result=result*primes[indexes[i]];
+            idx=indexes[i];
+            if(idx!=-1){
+                result=result*primes[idx];
                 if(result>=value){
                     return 1; //(ok)
                 }
@@ -67,7 +69,7 @@ class prime_hashes{
     }
 
     uint64_t gen_hash(Poly* func, long value){
-        uint32_t prime_result=primes[func->evaluate(value)];
+        uint64_t prime_result=primes[func->evaluate(value)];
         uint32_t remainder_result=value%prime_result;
         return prime_result<<32|remainder_result;
     }
@@ -95,14 +97,33 @@ class hash_table{
         memset(hash,0,sizeof(hash_store)*size);
     }
 
-    short store(Poly* func, uint64_t value, uint64_t m_sum, uint m_withou_i){
+    short can_store(Poly* func, uint64_t value, uint64_t m_sum, uint64_t m_withou_i){
         short ret_val;
         long temp=func->T;
         func->T=t_size;
 
         long position=func->evaluate(value);
         long incre=1;
-        while(hash[position].active=0){
+        while(hash[position].active!=0){
+            position=(position+(incre*incre))%t_size;
+            incre++;
+            if(incre>128){
+                func->T=temp;
+                return 0;
+            }
+        }
+        func->T=temp;
+        return 1;
+    }
+
+    short store(Poly* func, uint64_t value, uint64_t m_sum, uint64_t m_withou_i){
+        short ret_val;
+        long temp=func->T;
+        func->T=t_size;
+
+        long position=func->evaluate(value);
+        long incre=1;
+        while(hash[position].active!=0){
             position=(position+(incre*incre))%t_size;
             incre++;
             if(incre>128){
@@ -112,6 +133,7 @@ class hash_table{
         }
         hash[position].m_sum=m_sum;
         hash[position].sum_without_i=m_withou_i;
+        hash[position].active=1;
         func->T=temp;
         return 1;
     }
@@ -133,7 +155,9 @@ class hash_table{
                 return 0; //not expected to return 0;
             }
         }
-        uint64_t final_answer=retrieval(out_key,hash[loc].sum_without_i,k_sum) ^ index_key;
+        //retrieval not right answer
+        uint64_t final_answer=retrieval(out_key,hash[loc].sum_without_i,k_sum);
+        final_answer=final_answer ^ index_key;
 
         prime_remainder_pair[0]=final_answer>>32;
         prime_remainder_pair[1]=final_answer & 0x00000000FFFFFFFF;
@@ -161,30 +185,56 @@ class node{
 
     void initialize(int key[],int n,int table_size, int p_size, short id){
         key_size=n;
-        func=new Poly(n,table_size);
-        for(int i=0;i<=n+1;i++){
+        func=new Poly(n-1,p_size); //beware the size if 256 whereas table is 1024
+        for(int i=0;i<n;i++){
             func->setCoeff(key[i],i);
         }
 
-        secret_k=key[rand()%n]<<32|key[rand()%n];
-        index_key=rand()<<32|rand();
+        secret_k=(uint64_t)(key[rand()%n])<<32|key[rand()%n];
+        index_key=(uint64_t)rand()<<32|rand();
         table=new hash_table(table_size);
         prime_size=p_size;
 
         this->ID=id;
     }
 
+    void print_view(){
+        cout<<"print out party "<<this->ID<<"'s table information"<<endl;
+        for(int i=0;i<this->table->t_size;i++){
+            if(this->table->hash[i].active==1){
+                cout<<"Index "<<i<<" : "<<"sum m ="<<this->table->hash[i].m_sum<<" m w/out i = "<<this->table->hash[i].sum_without_i<<endl;
+            }
+            else{
+                cout<<"Index "<<i<<" : value not stored"<<endl;
+            }
+        }
+    }
+
+    short can_store(uint64_t out_key, uint64_t sum_m, uint64_t m){
+        return table->can_store(this->func,out_key,sum_m,sum_m^m);
+    }
+
     short store(uint64_t out_key, uint64_t sum_m, uint64_t m){
-        return table->store(this->func,out_key,sum_m,sum_m^m)==1;
+        return table->store(this->func,out_key,sum_m,sum_m^m);
     }
 
     short retrieve(uint64_t out_key, uint64_t index, int prime_remainder_pair[], uint64_t k_sum){
         //store the result in prime remainder pair if valid, else return 0
-        if(index&(1<<this->ID)==0){return 0;} //not your turn
-        return this->table->retrieve(out_key,prime_remainder_pair,k_sum,this->func,index);
+        if((index&(1<<this->ID))==0){return 0;} //not your turn
+        return this->table->retrieve(out_key,prime_remainder_pair,k_sum,this->func,this->index_key);
     }
 
     //finish the retrieve function requires k_sum, m_sum, 
+
+    uint64_t gen_m(prime_hashes* ph, int idx, uint64_t val){
+        //hashed result ^ index_key 
+        uint64_t prime=ph->primes[idx];
+        uint64_t remainder=val%prime;
+        uint64_t piri=(prime<<32|remainder);
+        uint64_t res=piri ^ index_key; //m(i)
+        uint64_t debug=res ^ index_key;
+        return res;
+    }
 
     ~node(){
         delete func;
@@ -209,22 +259,35 @@ class dv_hash{
 
         for(int i=0;i<parties;i++){
             int* temp_key=new int[degree+1]; //poly of 3 for now 
-            select_primes(ph->primes,temp_key,degree+1,256);
+            select_primes(ph->primes,temp_key,degree,256);
             this->parties[i].initialize(temp_key,degree+1,1024,256,i);
             delete[] temp_key;
         }
 
         //communicating the sum of K I guess?
-        sum_key=rand()<<32|rand();
+        sum_key=(uint64_t)rand()<<32|rand();
         uint64_t temp=sum_key;
         for(int i=0;i<parties;i++){
-            sum_key^this->parties[i].secret_k;
+            sum_key^=this->parties[i].secret_k;
         }
         sum_key=sum_key^temp;
     }
 
+    void print_table_view(uint64_t party_bit_map=0xFFFFFFFFFFFFFFFF){
+        //print each party's table simulate attacker's view
+        node* current;
+        for(int i=0;i<64;i++){
+            if((party_bit_map & (1<<i))==1){
+                current=&this->parties[i];
+                current->print_view();
+                cout<<endl;
+            }
+        }
+    }
 
-    short store(int party_index[],int party_size,uint64_t val){
+
+
+    short store(int party_index[],int party_size,uint64_t val, uint64_t result[2]){
         int* hash_index=new int[party_size];
         int* collision=new int[party_size];
 
@@ -233,7 +296,7 @@ class dv_hash{
         node* current;
         long id;
         for(int i=0;i<party_size;i++){
-            current=&parties[party_index[i]];
+            current=&(this->parties[party_index[i]]);
             id=current->func->evaluate(val);
             if(ph->lock[id]==0){
                 hash_index[i]=id;
@@ -270,7 +333,7 @@ class dv_hash{
 
             }
             else{
-                ph->lock[hash_index[place]]==0;
+                ph->lock[hash_index[place]]=0;
 
                 while((ph->lock[hash_index[place]]==1)&&(hash_index[place]<ph->largest())){
                     hash_index[place]++;
@@ -285,37 +348,119 @@ class dv_hash{
                     else{
                         place++;
                     }
-                };
+                }
             }
         }
 
         //now we have a useable hash indexes indicating each parties 
-        //generate individual hashes and all the associated keys
+        //generate individual hashes and all the associated keys check if we can store for table (no error)
+
 
         //we get m, total key then and communicate the general m to save to the place 
+        uint64_t* all_m=new uint64_t[party_size];
+        int* final_party=new int[party_size]; memset(final_party,-1,party_size*sizeof(int));
 
-
+        memset(all_m,0,sizeof(uint64_t)*party_size);
 
         for(int i=0;i<party_size;i++){
             current_idx=hash_index[i];
             if(current_idx!=-1){
                 current=&this->parties[party_index[i]];//get the party associated with it
-                current->store()
+                final_party[i]=party_index[i]; //get the final party size and nodes;
+                all_m[i]=current->gen_m(ph,current_idx,val);
+            }
+        }
+        uint64_t sum_m=gen_sum_m(all_m,party_size);
+        
+        //check if individual hash table has issues 
+        for(int i=0;i<party_size;i++){
+            current_idx=hash_index[i];
+            if(current_idx!=-1){
+                current=&this->parties[party_index[i]]; //get the party associated with it
+                
+                if(current->can_store(sum_m^sum_key,sum_m,all_m[i])!=1){
+                    //local storage failure
+                    delete[] hash_index;
+                    delete[] collision;
+                    delete[] all_m;
+                    delete[] final_party;
+                    return 0;
+                };
             }
             //else continue the next loop, the party is not being used yet
         }
 
-
-
+        //now we finally store something
+        for(int i=0;i<party_size;i++){
+            current_idx=hash_index[i];
+            if(current_idx!=-1){
+                current=&this->parties[party_index[i]]; //get the party associated with it
+                current->store(sum_m^sum_key,sum_m,all_m[i]);
+            }
+            //else continue the next loop, the party is not being used yet
+        }
+    
+        result[0]= gen_party_indexes(final_party,party_size); //needs debugging 
+        result[1]= sum_m ^ sum_key; //the out_key
 
         delete[] hash_index;
         delete[] collision;
+        delete[] all_m;
+        delete[] final_party;
+        return 1;
     }
 
+    uint64_t retrieve(uint64_t parties, uint64_t out_key){
+        int value_storage[]={0,0};
+        long primes[64],remainder[64];
+        int counter=0; uint64_t lcm=1;
+        for(int i=0;i<64;i++){
+            if(this->parties[i].retrieve(out_key,parties,value_storage,this->sum_key)==1){
+                primes[counter]=value_storage[0];
+                lcm*=value_storage[0];
+                remainder[counter]=value_storage[1];  
+                counter++;
+            };
+        }
+        return CRT(lcm,primes,remainder,counter);
+    }
 
+    ~dv_hash(){
+        delete ph;
+        delete[] parties;
+    }
 };
 
 
+
+
+
+//testing scripts
+void gen_rand_test_group(int array[]){
+    uint32_t x=(rand()^rand());
+    int counter=0;;
+    for(int i=0;i<32;i++){
+        if((x & 1<<i) != 0){
+            array[counter]=i;
+            counter++;
+        }
+    }
+}
+
+//this is the main function
+
 int main(){
+    int failed=0;
+    int success=0;
+    dv_hash hash_t(27);
+    int pt_idx[32]; memset(pt_idx,0,32*sizeof(int));
+    uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
+    for(int i=0;i<100;i++){
+        gen_rand_test_group(pt_idx);
+        if(hash_t.store(pt_idx,3,4,res)==0){failed++;}
+        else{success++;}
+    }
+    cout<<"failed Count: "<<failed<<endl;
+    cout<<"Success Count: "<<success<<endl;
     return 0;
 }
