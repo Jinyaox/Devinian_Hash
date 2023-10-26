@@ -8,6 +8,8 @@
 
 #define MAX_DEGREE 10
 
+static int conflict_counter=0; //for debuging and testing
+
 typedef struct hash_store{
     uint8_t active;
     uint64_t m_sum;
@@ -332,9 +334,11 @@ class dv_hash{
                 }
 
             }
-            else{
+            else{ //bug here
                 ph->lock[hash_index[place]]=0;
 
+                hash_index[place]++;
+                conflict_counter++;
                 while((ph->lock[hash_index[place]]==1)&&(hash_index[place]<ph->largest())){
                     hash_index[place]++;
                 }
@@ -455,12 +459,19 @@ int main(){
     dv_hash hash_t(27);
     int pt_idx[32]; memset(pt_idx,0,32*sizeof(int));
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
-    for(int i=0;i<100;i++){
+    for(int i=0;i<200;i++){
         gen_rand_test_group(pt_idx);
         if(hash_t.store(pt_idx,3,4,res)==0){failed++;}
-        else{success++;}
+        else{
+            success++;
+            //cout<<"Resulting Store: "<<res[0]<<" "<<res[1]<<endl;
+        }
     }
+
     cout<<"failed Count: "<<failed<<endl;
     cout<<"Success Count: "<<success<<endl;
+    cout<<"Conflict Counter: "<<conflict_counter<<endl;
+
+    //cout<<hash_t.retrieve((uint64_t) 8 )
     return 0;
 }
