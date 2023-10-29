@@ -5,6 +5,7 @@
 #include "xor.h"
 #include "Poly.h"
 #include <limits.h>
+#include <chrono>
 
 #define MAX_DEGREE 10
 
@@ -68,6 +69,11 @@ class prime_hashes{
 
     short locked(int index){
         return this->lock[index]==1;
+    }
+
+    void clear_lock(){
+        //clear all locks in this thing
+        memset(this->lock,0,this->size);
     }
 
     uint64_t gen_hash(Poly* func, long value){
@@ -200,11 +206,11 @@ class node{
         this->ID=id;
     }
 
-    void print_view(){
+    void print_view(){ //bad access error
         cout<<"print out party "<<this->ID<<"'s table information"<<endl;
         for(int i=0;i<this->table->t_size;i++){
             if(this->table->hash[i].active==1){
-                cout<<"Index "<<i<<" : "<<"sum m ="<<this->table->hash[i].m_sum<<" m w/out i = "<<this->table->hash[i].sum_without_i<<endl;
+                cout<<"Index "<<i<<" : "<<"sum m = "<<this->table->hash[i].m_sum<<"        m w/out i = "<<this->table->hash[i].sum_without_i<<endl;
             }
             else{
                 cout<<"Index "<<i<<" : value not stored"<<endl;
@@ -231,7 +237,7 @@ class node{
     uint64_t gen_m(prime_hashes* ph, int idx, uint64_t val){
         //hashed result ^ index_key 
         uint64_t prime=ph->primes[idx];
-        uint64_t remainder=val%prime;
+        uint64_t remainder=val%prime; //index here is 0 for some reason at 256
         uint64_t piri=(prime<<32|remainder);
         uint64_t res=piri ^ index_key; //m(i)
         uint64_t debug=res ^ index_key;
@@ -259,12 +265,12 @@ class dv_hash{
         ph=new prime_hashes(256); //256 for now
         this->parties= new node[parties];
 
+        int* temp_key=new int[degree+1]; //poly of 3 for now 
         for(int i=0;i<parties;i++){
-            int* temp_key=new int[degree+1]; //poly of 3 for now 
             select_primes(ph->primes,temp_key,degree,256);
             this->parties[i].initialize(temp_key,degree+1,1024,256,i);
-            delete[] temp_key;
         }
+        delete[] temp_key;
 
         //communicating the sum of K I guess?
         sum_key=(uint64_t)rand()<<32|rand();
@@ -278,8 +284,8 @@ class dv_hash{
     void print_table_view(uint64_t party_bit_map=0xFFFFFFFFFFFFFFFF){
         //print each party's table simulate attacker's view
         node* current;
-        for(int i=0;i<64;i++){
-            if((party_bit_map & (1<<i))==1){
+        for(int i=0;i<64;i++){ //this only goes up to 27
+            if((party_bit_map & (uint64_t)(1<<i))!=0){
                 current=&this->parties[i];
                 current->print_view();
                 cout<<endl;
@@ -295,6 +301,7 @@ class dv_hash{
 
         memset(collision,-1,party_size*sizeof(int));
         memset(hash_index,-1,party_size*sizeof(int));
+        ph->clear_lock();
         node* current;
         long id;
         for(int i=0;i<party_size;i++){
@@ -309,17 +316,19 @@ class dv_hash{
             }
         }
 
-        //resolve hash issues, see if everything is fine for the value(ie. not too big or small)
-
         int place=0; //the iterator for the normal parties (use this first)
         int collision_substitute=0; //iterator for substituting party
         int current_idx;
+        int debug=0;
+        int revert=0; //make sure clear it
 
         while(ph->can_gen(hash_index,val,party_size)==0){ //see if the current hash indexes are sufficiently large
+            //we are stucked here!
 
             if(place>=party_size){ //exhausted all the possible existing parties
+                debug = collision[collision_substitute];
 
-                while(collision[collision_substitute]==-1){ //find the next 
+                while(debug==-1){ //find the next 
 
                     //the if condition checks if we used all possible values
                     if(collision_substitute>=party_size){
@@ -327,23 +336,33 @@ class dv_hash{
                     }
 
                     collision_substitute++;
+                    debug=collision[collision_substitute];
                 }
-                hash_index[collision_substitute]=collision[collision_substitute];
-                while((ph->lock[hash_index[collision_substitute]]==1)&&(hash_index[collision_substitute]<ph->largest())){
+                hash_index[collision_substitute]=debug;
+                
+                while((ph->lock[hash_index[collision_substitute]]==1)&&(hash_index[collision_substitute]<(ph->size)-1)){
                     hash_index[collision_substitute]++;
                 }
+                collision_substitute++; //to avoid deadlock
 
             }
-            else{ //bug here
+            else{
                 ph->lock[hash_index[place]]=0;
-
+                revert=hash_index[place];
                 hash_index[place]++;
-                conflict_counter++;
-                while((ph->lock[hash_index[place]]==1)&&(hash_index[place]<ph->largest())){
+
+                //logic issue and did we clear the lock?
+                while((ph->lock[hash_index[place]]==1)&&(hash_index[place]<(ph->size)-1)){
                     hash_index[place]++;
                 }
 
-                ph->lock[hash_index[place]]=1;
+                if((hash_index[place]>=ph->size)){
+                    ph->lock[revert]=1;
+                    hash_index[place]=revert;
+                    place++;
+                }else{
+                    ph->lock[hash_index[place]]=1;
+                }
                 
                 while(hash_index[place]==-1){ //move to the next place for hash index
                     if(place>=party_size){
@@ -440,7 +459,7 @@ class dv_hash{
 
 
 //testing scripts
-void gen_rand_test_group(int array[]){
+int gen_rand_test_group(int array[]){
     uint32_t x=(rand()^rand());
     int counter=0;;
     for(int i=0;i<32;i++){
@@ -449,6 +468,7 @@ void gen_rand_test_group(int array[]){
             counter++;
         }
     }
+    return counter;
 }
 
 //this is the main function
@@ -456,22 +476,33 @@ void gen_rand_test_group(int array[]){
 int main(){
     int failed=0;
     int success=0;
-    dv_hash hash_t(27);
-    int pt_idx[32]; memset(pt_idx,0,32*sizeof(int));
+    int group_num;
+    dv_hash hash_t(64);
+    int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
+
+    //timed unit
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    
     for(int i=0;i<200;i++){
-        gen_rand_test_group(pt_idx);
-        if(hash_t.store(pt_idx,3,4,res)==0){failed++;}
+        group_num=gen_rand_test_group(pt_idx);
+        if(hash_t.store(pt_idx,group_num,rand(),res)==0){ //arithmetic error at sum m
+            failed++;
+        }
         else{
             success++;
             //cout<<"Resulting Store: "<<res[0]<<" "<<res[1]<<endl;
         }
     }
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    
+    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+    //Time difference = 2212[µs]
 
-    cout<<"failed Count: "<<failed<<endl;
-    cout<<"Success Count: "<<success<<endl;
-    cout<<"Conflict Counter: "<<conflict_counter<<endl;
+    hash_t.print_table_view();
 
-    //cout<<hash_t.retrieve((uint64_t) 8 )
+    // cout<<"failed Count: "<<failed<<endl;
+    // cout<<"Success Count: "<<success<<endl;
+    // cout<<"Conflict Counter: "<<conflict_counter<<endl;
     return 0;
 }

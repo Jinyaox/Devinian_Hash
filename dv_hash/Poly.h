@@ -63,7 +63,7 @@ public:
     }
 
     // evaluate: evaluate a polynomial for a specified value of X
-    long evaluate (long x){
+    long evaluate (long x){ //things not right here
 
         long result=0;
         int degree=(this->k+1);
