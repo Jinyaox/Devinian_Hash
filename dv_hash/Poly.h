@@ -52,27 +52,18 @@ public:
         return coeff[i];
     }
 
-
-    long eval_a_term(long coefficient, long x, long power){
-        if(power==1){
-            return ((coefficient%T)*(x%T))%T;
-        }else{
-            long temp=eval_a_term(coefficient,x,power-1) % T;
-            return ((x%T)*(temp%T))%T;
-        }
-    }
-
-    // evaluate: evaluate a polynomial for a specified value of X
-    long evaluate (long x){ //things not right here
-
+    //needs to redo this eval now unit test it
+    long eval (long x, int max_prime, int current=0){
         long result=0;
-        int degree=(this->k+1);
-        long temp;
-        for(long i=1;i<degree;i++){
-            temp=eval_a_term(this->retrieveCoeff(i),x,i);
-            result=result+temp;
+        if(current==(this->k)){
+            return this->retrieveCoeff(current) % max_prime;
         }
-        return result % T;
+        else if(current==0){
+            return ((this->retrieveCoeff(current)+x*eval(x,max_prime,current+1))%max_prime)%T;
+        }
+        else{
+            return (this->retrieveCoeff(current)+x*eval(x,max_prime,current+1))%max_prime;
+        }
     }
 };  
 

@@ -9,7 +9,8 @@
 
 #define MAX_DEGREE 10
 
-static int conflict_counter=0; //for debuging and testing
+static int max_prime=0;
+
 
 typedef struct hash_store{
     uint8_t active;
@@ -40,7 +41,7 @@ class prime_hashes{
     
     int* primes;
     short* lock;
-    unsigned size;
+    int size;
 
 
     prime_hashes(unsigned size, unsigned starting=2){
@@ -76,12 +77,6 @@ class prime_hashes{
         memset(this->lock,0,this->size);
     }
 
-    uint64_t gen_hash(Poly* func, long value){
-        uint64_t prime_result=primes[func->evaluate(value)];
-        uint32_t remainder_result=value%prime_result;
-        return prime_result<<32|remainder_result;
-    }
-
     int largest(){
         return this->primes[size-1];
     }
@@ -95,7 +90,7 @@ class prime_hashes{
 class hash_table{
     public: 
     hash_store* hash;
-    unsigned t_size;
+    int t_size;
 
     int current_value; //to check if it's too small or too big for hash
 
@@ -110,7 +105,7 @@ class hash_table{
         long temp=func->T;
         func->T=t_size;
 
-        long position=func->evaluate(value);
+        long position=func->eval(value,max_prime);
         long incre=1;
         while(hash[position].active!=0){
             position=(position+(incre*incre))%t_size;
@@ -129,7 +124,7 @@ class hash_table{
         long temp=func->T;
         func->T=t_size;
 
-        long position=func->evaluate(value);
+        long position=func->eval(value,max_prime);
         long incre=1;
         while(hash[position].active!=0){
             position=(position+(incre*incre))%t_size;
@@ -151,7 +146,7 @@ class hash_table{
         long temp=func->T;
         func->T=t_size;
          
-        unsigned loc=func->evaluate(out_key);
+        unsigned loc=func->eval(out_key,max_prime);
         uint64_t m_sum=hash[loc].m_sum;
         unsigned incre=1;
 
@@ -262,12 +257,13 @@ class dv_hash{
     public:
 
     dv_hash(int parties, int degree=3){
-        ph=new prime_hashes(256); //256 for now
+        ph=new prime_hashes(256);
+        max_prime=ph->primes[255];
         this->parties= new node[parties];
 
-        int* temp_key=new int[degree+1]; //poly of 3 for now 
+        int* temp_key=new int[degree+1];
         for(int i=0;i<parties;i++){
-            select_primes(ph->primes,temp_key,degree,256);
+            select_coefficients(ph->primes,temp_key,degree,256);
             this->parties[i].initialize(temp_key,degree+1,1024,256,i);
         }
         delete[] temp_key;
@@ -294,7 +290,6 @@ class dv_hash{
     }
 
 
-
     short store(int party_index[],int party_size,uint64_t val, uint64_t result[2]){
         int* hash_index=new int[party_size];
         int* collision=new int[party_size];
@@ -306,7 +301,7 @@ class dv_hash{
         long id;
         for(int i=0;i<party_size;i++){
             current=&(this->parties[party_index[i]]);
-            id=current->func->evaluate(val);
+            id=current->func->eval(val,max_prime);
             if(ph->lock[id]==0){
                 hash_index[i]=id;
                 ph->lock[id]=1;
@@ -323,7 +318,6 @@ class dv_hash{
         int revert=0; //make sure clear it
 
         while(ph->can_gen(hash_index,val,party_size)==0){ //see if the current hash indexes are sufficiently large
-            //we are stucked here!
 
             if(place>=party_size){ //exhausted all the possible existing parties
                 debug = collision[collision_substitute];
@@ -343,6 +337,7 @@ class dv_hash{
                 while((ph->lock[hash_index[collision_substitute]]==1)&&(hash_index[collision_substitute]<(ph->size)-1)){
                     hash_index[collision_substitute]++;
                 }
+                ph->lock[hash_index[collision_substitute]]=1;
                 collision_substitute++; //to avoid deadlock
 
             }
@@ -477,29 +472,26 @@ int main(){
     int failed=0;
     int success=0;
     int group_num;
-    dv_hash hash_t(64);
     int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
 
     //timed unit
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-    
-    for(int i=0;i<200;i++){
-        group_num=gen_rand_test_group(pt_idx);
-        if(hash_t.store(pt_idx,group_num,rand(),res)==0){ //arithmetic error at sum m
-            failed++;
+    for(int epoch=0; epoch<10; epoch++){
+        dv_hash hash_t(64);
+        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+        for(int i=0;i<(int)pow(2,epoch);i++){ //arithmetic error i 70 epoch 7
+            group_num=gen_rand_test_group(pt_idx); //13
+            if(hash_t.store(pt_idx,group_num,rand(),res)==0){
+                failed++;
+            }
+            else{
+                success++;
+                //cout<<"Resulting Store: "<<res[0]<<" "<<res[1]<<endl;
+            }
         }
-        else{
-            success++;
-            //cout<<"Resulting Store: "<<res[0]<<" "<<res[1]<<endl;
-        }
+        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    
-    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
-    //Time difference = 2212[µs]
-
-    hash_t.print_table_view();
 
     // cout<<"failed Count: "<<failed<<endl;
     // cout<<"Success Count: "<<success<<endl;
