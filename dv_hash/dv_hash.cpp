@@ -187,13 +187,14 @@ class node{
     node(){}
 
     void initialize(int key[],int n,int table_size, int p_size, short id){
+        //initialize all the function data!!! otherwise secret key gets a 0 sometimes
         key_size=n;
         func=new Poly(n-1,p_size); //beware the size if 256 whereas table is 1024
         for(int i=0;i<n;i++){
             func->setCoeff(key[i],i);
         }
 
-        secret_k=(uint64_t)(key[rand()%n])<<32|key[rand()%n];
+        secret_k=(uint64_t)((key[rand()%n])<<32|key[rand()%n]);
         index_key=(uint64_t)rand()<<32|rand();
         table=new hash_table(table_size);
         prime_size=p_size;
@@ -445,7 +446,7 @@ class dv_hash{
 
     ~dv_hash(){
         delete ph;
-        delete[] parties;
+        delete[] this->parties;
     }
 };
 
@@ -476,7 +477,7 @@ int main(){
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
 
     //timed unit
-    for(int epoch=0; epoch<10; epoch++){
+    for(int epoch=0; epoch<11; epoch++){
         dv_hash hash_t(64);
         std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
         for(int i=0;i<(int)pow(2,epoch);i++){ //arithmetic error i 70 epoch 7
@@ -493,8 +494,7 @@ int main(){
         std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
 
-    // cout<<"failed Count: "<<failed<<endl;
-    // cout<<"Success Count: "<<success<<endl;
-    // cout<<"Conflict Counter: "<<conflict_counter<<endl;
+    cout<<"failed Count: "<<failed<<endl;
+    cout<<"Success Count: "<<success<<endl;
     return 0;
 }

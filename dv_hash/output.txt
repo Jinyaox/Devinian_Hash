@@ -1,4 +1,20 @@
-Time difference = 3314[µs]
+Time difference = 15[µs]
+Time difference = 29[µs]
+Time difference = 119[µs]
+Time difference = 64[µs]
+Time difference = 113[µs]
+Time difference = 241[µs]
+Time difference = 620[µs]
+Time difference = 814[µs]
+Time difference = 1559[µs]
+Time difference = 3210[µs]
+Time difference = 7540[µs]
+failed Count: 0
+Success Count: 2047
+
+
+A Sample Table OUTPUT
+------------------------------------------------------------------------------------------
 
 print out party 0's table information
 Index 0 : value not stored
