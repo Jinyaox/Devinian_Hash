@@ -53,8 +53,7 @@ public:
     }
 
     //needs to redo this eval now unit test it
-    long eval (long x, int max_prime, int current=0){
-        long result=0;
+    uint64_t eval (uint64_t x, int max_prime, int current=0){
         if(current==(this->k)){
             return this->retrieveCoeff(current) % max_prime;
         }

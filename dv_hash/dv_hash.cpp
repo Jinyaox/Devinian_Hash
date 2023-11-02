@@ -6,6 +6,7 @@
 #include "Poly.h"
 #include <limits.h>
 #include <chrono>
+#include <fstream>
 
 #define MAX_DEGREE 10
 
@@ -92,7 +93,7 @@ class hash_table{
     hash_store* hash;
     int t_size;
 
-    int current_value; //to check if it's too small or too big for hash
+    int current_value;
 
     hash_table(unsigned size){
         this->t_size=size;
@@ -146,7 +147,7 @@ class hash_table{
         long temp=func->T;
         func->T=t_size;
          
-        unsigned loc=func->eval(out_key,max_prime);
+        long loc=func->eval((long)out_key,max_prime);
         uint64_t m_sum=hash[loc].m_sum;
         unsigned incre=1;
 
@@ -158,12 +159,13 @@ class hash_table{
                 return 0; //not expected to return 0;
             }
         }
-        //retrieval not right answer
-        uint64_t final_answer=retrieval(out_key,hash[loc].sum_without_i,k_sum);
-        final_answer=final_answer ^ index_key;
 
+        uint64_t final_answer=retrieval(out_key,hash[loc].sum_without_i,k_sum);
+
+        final_answer=final_answer ^ index_key;
         prime_remainder_pair[0]=final_answer>>32;
         prime_remainder_pair[1]=final_answer & 0x00000000FFFFFFFF;
+        cout<<prime_remainder_pair[0]<<" "<<prime_remainder_pair[1]<<endl;
         func->T=temp;
         return 1;
     }
@@ -194,7 +196,7 @@ class node{
             func->setCoeff(key[i],i);
         }
 
-        secret_k=(uint64_t)((key[rand()%n])<<32|key[rand()%n]);
+        secret_k=(uint64_t)rand()<<32|rand();
         index_key=(uint64_t)rand()<<32|rand();
         table=new hash_table(table_size);
         prime_size=p_size;
@@ -202,7 +204,7 @@ class node{
         this->ID=id;
     }
 
-    void print_view(){ //bad access error
+    void print_view(){
         cout<<"print out party "<<this->ID<<"'s table information"<<endl;
         for(int i=0;i<this->table->t_size;i++){
             if(this->table->hash[i].active==1){
@@ -224,7 +226,9 @@ class node{
 
     short retrieve(uint64_t out_key, uint64_t index, int prime_remainder_pair[], uint64_t k_sum){
         //store the result in prime remainder pair if valid, else return 0
-        if((index&(1<<this->ID))==0){return 0;} //not your turn
+
+        uint64_t mask=((uint64_t)1)<<this->ID;
+        if((index&mask)==0){return 0;} //not your turn
         return this->table->retrieve(out_key,prime_remainder_pair,k_sum,this->func,this->index_key);
     }
 
@@ -233,9 +237,11 @@ class node{
     uint64_t gen_m(prime_hashes* ph, int idx, uint64_t val){
         //hashed result ^ index_key 
         uint64_t prime=ph->primes[idx];
-        uint64_t remainder=val%prime; //index here is 0 for some reason at 256
+        uint64_t remainder=val%prime;
+        cout<<prime<<" "<<remainder<<endl;
         uint64_t piri=(prime<<32|remainder);
         uint64_t res=piri ^ index_key; //m(i)
+
         uint64_t debug=res ^ index_key;
         return res;
     }
@@ -281,7 +287,7 @@ class dv_hash{
     void print_table_view(uint64_t party_bit_map=0xFFFFFFFFFFFFFFFF){
         //print each party's table simulate attacker's view
         node* current;
-        for(int i=0;i<64;i++){ //this only goes up to 27
+        for(int i=0;i<64;i++){
             if((party_bit_map & (uint64_t)(1<<i))!=0){
                 current=&this->parties[i];
                 current->print_view();
@@ -419,7 +425,7 @@ class dv_hash{
             //else continue the next loop, the party is not being used yet
         }
     
-        result[0]= gen_party_indexes(final_party,party_size); //needs debugging 
+        result[0]= gen_party_indexes(final_party,party_size); 
         result[1]= sum_m ^ sum_key; //the out_key
 
         delete[] hash_index;
@@ -431,17 +437,16 @@ class dv_hash{
 
     uint64_t retrieve(uint64_t parties, uint64_t out_key){
         int value_storage[]={0,0};
-        long primes[64],remainder[64];
-        int counter=0; uint64_t lcm=1;
+        uint64_t primes[64],remainder[64];
+        int counter=0; uint64_t lcm=1; uint64_t OLD_lcm=1; //prevent LCM overflow
         for(int i=0;i<64;i++){
             if(this->parties[i].retrieve(out_key,parties,value_storage,this->sum_key)==1){
-                primes[counter]=value_storage[0];
-                lcm*=value_storage[0];
-                remainder[counter]=value_storage[1];  
+                remainder[counter]=value_storage[1]; 
+                primes[counter]=value_storage[0]; 
                 counter++;
             };
         }
-        return CRT(lcm,primes,remainder,counter);
+        return CRT(primes,remainder,counter);
     }
 
     ~dv_hash(){
@@ -467,27 +472,24 @@ int gen_rand_test_group(int array[]){
     return counter;
 }
 
-//this is the main function
-
-int main(){
+void store_test(){
     int failed=0;
     int success=0;
     int group_num;
     int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
 
-    //timed unit
+    //timed unit for store
     for(int epoch=0; epoch<11; epoch++){
         dv_hash hash_t(64);
         std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-        for(int i=0;i<(int)pow(2,epoch);i++){ //arithmetic error i 70 epoch 7
-            group_num=gen_rand_test_group(pt_idx); //13
+        for(int i=0;i<(int)pow(2,epoch);i++){
+            group_num=gen_rand_test_group(pt_idx); 
             if(hash_t.store(pt_idx,group_num,rand(),res)==0){
                 failed++;
             }
             else{
                 success++;
-                //cout<<"Resulting Store: "<<res[0]<<" "<<res[1]<<endl;
             }
         }
         std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -496,5 +498,50 @@ int main(){
 
     cout<<"failed Count: "<<failed<<endl;
     cout<<"Success Count: "<<success<<endl;
+}
+
+void retrieve_test(dv_hash & hash_t, int amount=512){
+    int failed=0;
+    int success=0;
+    int group_num;
+    int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
+    uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
+    
+    ofstream myfile;
+    myfile.open ("result.csv");
+    myfile<<"ClearText,BitMap,OutKey\n";
+
+    //timed unit for store
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    for(int i=0;i<amount;i++){
+        group_num=gen_rand_test_group(pt_idx);
+        uint32_t val= rand();
+        if(hash_t.store(pt_idx,group_num,rand(),res)==0){
+            ;
+        }
+        else{
+            myfile<<val<<","<<res[0]<<","<<res[1]<<endl;
+        }
+    }
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    std::cout << "Storing Time = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+    myfile.close();
+
+
+
+    // cout<<"failed Count: "<<failed<<endl;
+    // cout<<"Success Count: "<<success<<endl;
+}
+
+int main(){
+    dv_hash hash_t(64);
+    int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
+    uint64_t group_num= gen_rand_test_group(pt_idx);
+    uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
+
+    hash_t.store(pt_idx,group_num,177568,res);
+
+    cout<<endl;
+    cout<<hash_t.retrieve(res[0],res[1])<<endl;
     return 0;
 }

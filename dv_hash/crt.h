@@ -3,51 +3,69 @@
 #include <stdlib.h>
 #include <iostream>
 using namespace std;
+//5
+uint64_t inv(uint64_t a, uint64_t m) 
+{ 
+    long m0 = m, t, q; 
+    long x0 = 0, x1 = 1; //0
+  
+    if (m == 1) 
+        return 0; 
+  
+    // Apply extended Euclid Algorithm 
+    while (a > 1) { 
+        // q is quotient 
+        q = a / m; 
+  
+        t = m; 
+  
+        // m is remainder now, process same as 
+        // euclid's algo 
+        m = a % m, a = t; 
+  
+        t = x0; 
+  
+        x0 = x1 - q * x0; 
+  
+        x1 = t; 
+    } 
+  
+    // Make x1 positive 
+    if (x1 < 0) 
+        x1 += m0; 
+  
+    return x1; 
+}
 
-long exgcd(long a, long b, long &x, long &y)
-{
-    if (b == 0)
-    {
-        x = 1;
-        y = 0;
-        return a;
+uint64_t CRT(uint64_t num[], uint64_t rem[], uint64_t k) 
+{ 
+    // Compute product of all numbers 
+    uint64_t prod = 1; 
+    uint64_t old_prod=prod;
+    int counter=0;
+    for (int i = 0; i < k; i++){
+        old_prod=prod;
+        prod *= num[i]; 
+        if(prod<old_prod){
+            break;
+        }
+        counter++;
     }
-    long d = exgcd(b, a % b, y, x);
-    y -= (a / b) * x;
-    return d;
-}
-
-long inv(long a, long p)
-{
-    long x, y;
-    exgcd(a, p, x, y);
-    return (x % p + p) % p;
-}
-
-long compute(long lcm, long prime, long number)
-/*
-    the function takes a prime number and a number. It computes the number to share for summation
-*/
-{
-    long r = lcm / prime;
-    long b= number % prime;
-    return (b * r * inv(r, prime)) % lcm;
-}
-
-
-long CRT(long lcm, long prime[], long remainder[],long n){ //proof of concepts
-    long sum=0;
-    for(int i=0;i<n;i++){
-        sum=sum+compute(lcm,prime[i],remainder[i]);
-    }
-    return sum % lcm;
+  
+    // Initialize result 
+    uint64_t result = 0; 
+  
+    // Apply above formula 
+    for (uint64_t i = 0; i < counter; i++) { 
+        uint64_t pp = prod / num[i]; 
+        uint64_t tempr=rem[i];
+        uint64_t inverse=inv(pp, num[i]);
+        tempr*=pp;
+        tempr*=inverse;
+        result += tempr; 
+    } 
+  
+    return result % prod; 
 }
 
 #endif
-
-// int main(){//15
-//     long primes[3]={2,7,11};
-//     long remainders[3]={1,1,4};
-//     int x=CRT(154, primes, remainders,3);
-//     return 0;
-// }
