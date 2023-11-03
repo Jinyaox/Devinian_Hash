@@ -46,7 +46,8 @@ uint64_t CRT(uint64_t num[], uint64_t rem[], uint64_t k)
     for (int i = 0; i < k; i++){
         old_prod=prod;
         prod *= num[i]; 
-        if(prod<old_prod){
+        if(prod>4294967295){ //max of 32 bit int
+            counter++;
             break;
         }
         counter++;

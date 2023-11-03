@@ -19,6 +19,11 @@ typedef struct hash_store{
     uint64_t sum_without_i;
 }hash_store;
 
+typedef struct receipt{
+    uint64_t bitmap;
+    uint64_t outkey;
+}receipt;
+
 //change all these to long! 
 
 int cmpfunc_min (const void * a, const void * b) {
@@ -165,7 +170,7 @@ class hash_table{
         final_answer=final_answer ^ index_key;
         prime_remainder_pair[0]=final_answer>>32;
         prime_remainder_pair[1]=final_answer & 0x00000000FFFFFFFF;
-        cout<<prime_remainder_pair[0]<<" "<<prime_remainder_pair[1]<<endl;
+        //cout<<prime_remainder_pair[0]<<" "<<prime_remainder_pair[1]<<endl;
         func->T=temp;
         return 1;
     }
@@ -238,7 +243,7 @@ class node{
         //hashed result ^ index_key 
         uint64_t prime=ph->primes[idx];
         uint64_t remainder=val%prime;
-        cout<<prime<<" "<<remainder<<endl;
+        //cout<<prime<<" "<<remainder<<endl;
         uint64_t piri=(prime<<32|remainder);
         uint64_t res=piri ^ index_key; //m(i)
 
@@ -500,48 +505,30 @@ void store_test(){
     cout<<"Success Count: "<<success<<endl;
 }
 
-void retrieve_test(dv_hash & hash_t, int amount=512){
+void retrieve_test(int amount=512){
+    dv_hash hash_t(64);
     int failed=0;
     int success=0;
     int group_num;
     int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
+    //receipt cache[512];
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
     
-    ofstream myfile;
-    myfile.open ("result.csv");
-    myfile<<"ClearText,BitMap,OutKey\n";
-
-    //timed unit for store
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-    for(int i=0;i<amount;i++){
+    for(int i=0;i<4;i++){
         group_num=gen_rand_test_group(pt_idx);
         uint32_t val= rand();
-        if(hash_t.store(pt_idx,group_num,rand(),res)==0){
+        cout<<val<<endl;
+        if(hash_t.store(pt_idx,group_num,val,res)==0){
             ;
         }
         else{
-            myfile<<val<<","<<res[0]<<","<<res[1]<<endl;
+            cout<<hash_t.retrieve(res[0],res[1])<<endl;
         }
+        cout<<endl;
     }
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    std::cout << "Storing Time = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
-    myfile.close();
-
-
-
-    // cout<<"failed Count: "<<failed<<endl;
-    // cout<<"Success Count: "<<success<<endl;
 }
 
 int main(){
-    dv_hash hash_t(64);
-    int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
-    uint64_t group_num= gen_rand_test_group(pt_idx);
-    uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
-
-    hash_t.store(pt_idx,group_num,177568,res);
-
-    cout<<endl;
-    cout<<hash_t.retrieve(res[0],res[1])<<endl;
+    retrieve_test();
     return 0;
 }
