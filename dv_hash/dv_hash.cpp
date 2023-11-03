@@ -46,14 +46,14 @@ class prime_hashes{
     public:
     
     int* primes;
-    short* lock;
+    int* lock;
     int size;
 
 
     prime_hashes(unsigned size, unsigned starting=2){
         this->size=size;
         this->primes= new int[size];
-        this->lock=new short[size];
+        this->lock=new int[size];
         memset(this->lock,0,size*sizeof(short));
         gen_n_primes(size,this->primes,starting);
     }
@@ -80,7 +80,7 @@ class prime_hashes{
 
     void clear_lock(){
         //clear all locks in this thing
-        memset(this->lock,0,this->size);
+        memset(this->lock,0,this->size*sizeof(int));
     }
 
     int largest(){
@@ -303,8 +303,8 @@ class dv_hash{
 
 
     short store(int party_index[],int party_size,uint64_t val, uint64_t result[2]){
-        int* hash_index=new int[party_size];
-        int* collision=new int[party_size];
+        int hash_index[64];
+        int collision[64];
 
         memset(collision,-1,party_size*sizeof(int));
         memset(hash_index,-1,party_size*sizeof(int));
@@ -314,7 +314,8 @@ class dv_hash{
         for(int i=0;i<party_size;i++){
             current=&(this->parties[party_index[i]]);
             id=current->func->eval(val,max_prime);
-            if(ph->lock[id]==0){
+            int debug=ph->lock[id];
+            if(ph->lock[id]!=1){
                 hash_index[i]=id;
                 ph->lock[id]=1;
             }
@@ -387,8 +388,8 @@ class dv_hash{
 
 
         //we get m, total key then and communicate the general m to save to the place 
-        uint64_t* all_m=new uint64_t[party_size];
-        int* final_party=new int[party_size]; memset(final_party,-1,party_size*sizeof(int));
+        uint64_t all_m [64];
+        int final_party[64];
 
         memset(all_m,0,sizeof(uint64_t)*party_size);
 
@@ -410,10 +411,6 @@ class dv_hash{
                 
                 if(current->can_store(sum_m^sum_key,sum_m,all_m[i])!=1){
                     //local storage failure
-                    delete[] hash_index;
-                    delete[] collision;
-                    delete[] all_m;
-                    delete[] final_party;
                     return 0;
                 };
             }
@@ -433,10 +430,6 @@ class dv_hash{
         result[0]= gen_party_indexes(final_party,party_size); 
         result[1]= sum_m ^ sum_key; //the out_key
 
-        delete[] hash_index;
-        delete[] collision;
-        delete[] all_m;
-        delete[] final_party;
         return 1;
     }
 
@@ -507,24 +500,26 @@ void store_test(){
 
 void retrieve_test(int amount=512){
     dv_hash hash_t(64);
-    int failed=0;
-    int success=0;
     int group_num;
     int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
-    //receipt cache[512];
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
+    receipt cache[512];
     
-    for(int i=0;i<4;i++){
+    for(int i=0;i<512;i++){
         group_num=gen_rand_test_group(pt_idx);
         uint32_t val= rand();
-        cout<<val<<endl;
-        if(hash_t.store(pt_idx,group_num,val,res)==0){
-            ;
+        hash_t.store(pt_idx,group_num,val,res);
+        cache[i].bitmap=res[0];
+        cache[i].outkey=res[1];
+    }
+
+    for(int loop=0;loop<10;loop++){
+        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+        for(int i=0;i<pow(2,loop);i++){
+            hash_t.retrieve(cache[i].bitmap,cache[i].outkey);
         }
-        else{
-            cout<<hash_t.retrieve(res[0],res[1])<<endl;
-        }
-        cout<<endl;
+        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
 }
 

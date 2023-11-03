@@ -14,7 +14,7 @@ uint64_t inv(uint64_t a, uint64_t m)
   
     // Apply extended Euclid Algorithm 
     while (a > 1) { 
-        // q is quotient 
+        // q is quotient now we have a division by 0 error
         q = a / m; 
   
         t = m; 
