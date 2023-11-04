@@ -6,7 +6,6 @@
 #include "Poly.h"
 #include <limits.h>
 #include <chrono>
-#include <fstream>
 
 #define MAX_DEGREE 10
 
