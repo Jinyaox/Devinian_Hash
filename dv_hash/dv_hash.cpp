@@ -8,6 +8,7 @@
 #include <chrono>
 
 #define MAX_DEGREE 10
+#define INT_MAX 1000000000
 
 static int max_prime=0;
 
