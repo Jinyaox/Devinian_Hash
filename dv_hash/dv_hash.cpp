@@ -3,7 +3,7 @@
 #include "helper.h"
 #include "crt.h"
 #include "xor.h"
-#include "/Users/rudolphtorres/Desktop/xxHash/xxhash.h"
+#include "../xxhash.h"
 #include <limits.h>
 #include <chrono>
 
@@ -24,7 +24,6 @@ typedef struct receipt{
     uint64_t outkey;
 }receipt;
 
-//change all these to long! 
 
 int cmpfunc_min (const void * a, const void * b) {
    return -( *(int*)a - *(int*)b );
@@ -106,48 +105,29 @@ class hash_table{
         memset(hash,0,sizeof(hash_store)*size);
     }
 
-    short can_store(Poly* func, uint64_t value, uint64_t m_sum, uint64_t m_withou_i){
+    int can_store(XXH32_hash_t seed, uint64_t value){
         short ret_val;
-        long temp=func->T;
-        func->T=t_size;
 
-        long position=func->eval(value,max_prime);
+        long position=(uint64_t)XXH64(&value,8,seed) % t_size;
         long incre=1;
         while(hash[position].active!=0){
             position=(position+(incre*incre))%t_size;
             incre++;
             if(incre>128){
-                func->T=temp;
-                return 0;
+                return -1;
             }
         }
-        func->T=temp;
-        return 1;
+        return position;
     }
 
-    short store(Poly* func, uint64_t value, uint64_t m_sum, uint64_t m_withou_i){
-        short ret_val;
-        long temp=func->T;
-        func->T=t_size;
-
-        long position=func->eval(value,max_prime);
-        long incre=1;
-        while(hash[position].active!=0){
-            position=(position+(incre*incre))%t_size;
-            incre++;
-            if(incre>128){
-                func->T=temp;
-                return 0;
-            }
-        }
+    short store(int position, uint64_t value, uint64_t m_sum, uint64_t m_withou_i){
         hash[position].m_sum=m_sum;
         hash[position].sum_without_i=m_withou_i;
         hash[position].active=1;
-        func->T=temp;
         return 1;
     }
 
-    short retrieve(uint64_t out_key, int prime_remainder_pair[], uint64_t k_sum, Poly* func, uint64_t index_key){
+    short retrieve(uint64_t out_key, int prime_remainder_pair[], uint64_t k_sum, XXH32_hash_t seed, uint64_t index_key){
         short ret_val;
         long temp=func->T;
         func->T=t_size;
@@ -190,33 +170,28 @@ class node{
     hash_table* table;
     XXH64_hash_t seed;
 
-    node(int table_size, int p_size, short id){
+    node(){
         seed =(XXH64_hash_t) rand();
         secret_k=(uint64_t)rand()<<32|rand();
-        index_key=(uint64_t)rand()<<32|rand();
+    }
+
+    void init(int table_size, int p_size, short id, uint64_t index_key){
+        this->ID=id;
+        this->index_key=index_key;
         table=new hash_table(table_size);
         prime_size=p_size;
-        this->ID=id;
     }
 
-    void print_view(){
-        cout<<"print out party "<<this->ID<<"'s table information"<<endl;
-        for(int i=0;i<this->table->t_size;i++){
-            if(this->table->hash[i].active==1){
-                cout<<"Index "<<i<<" : "<<"sum m = "<<this->table->hash[i].m_sum<<"        m w/out i = "<<this->table->hash[i].sum_without_i<<endl;
-            }
-            else{
-                cout<<"Index "<<i<<" : value not stored"<<endl;
-            }
-        }
+    int eval(int val,int max_prime){
+        return (int)((uint64_t) XXH64(&val,4,seed) % max_prime);
     }
 
-    short can_store(uint64_t out_key, uint64_t sum_m, uint64_t m){
-        return table->can_store(this->func,out_key,sum_m,sum_m^m);
+    int can_store(uint64_t out_key){
+        return table->can_store(seed,out_key);
     }
 
-    short store(uint64_t out_key, uint64_t sum_m, uint64_t m){
-        return table->store(this->func,out_key,sum_m,sum_m^m);
+    short store(int loc,uint64_t out_key, uint64_t sum_m, uint64_t m){
+        return table->store(loc,out_key,sum_m,sum_m^m);
     }
 
     short retrieve(uint64_t out_key, uint64_t index, int prime_remainder_pair[], uint64_t k_sum){
@@ -224,7 +199,7 @@ class node{
 
         uint64_t mask=((uint64_t)1)<<this->ID;
         if((index&mask)==0){return 0;} //not your turn
-        return this->table->retrieve(out_key,prime_remainder_pair,k_sum,this->func,this->index_key);
+        return this->table->retrieve(out_key,prime_remainder_pair,k_sum,seed,this->index_key);
     }
 
     //finish the retrieve function requires k_sum, m_sum, 
@@ -253,7 +228,7 @@ class dv_hash{
     private:
     node* parties;
     prime_hashes* ph;
-    uint64_t sum_key;
+    uint64_t verify_key;
 
     public:
 
@@ -262,31 +237,9 @@ class dv_hash{
         max_prime=ph->primes[255];
         this->parties= new node[parties];
 
-        int* temp_key=new int[degree+1];
+        verify_key=(uint64_t)rand()<<32|rand();
         for(int i=0;i<parties;i++){
-            select_coefficients(ph->primes,temp_key,degree,256);
-            this->parties[i].initialize(temp_key,degree+1,1024,256,i);
-        }
-        delete[] temp_key;
-
-        //communicating the sum of K I guess?
-        sum_key=(uint64_t)rand()<<32|rand();
-        uint64_t temp=sum_key;
-        for(int i=0;i<parties;i++){
-            sum_key^=this->parties[i].secret_k;
-        }
-        sum_key=sum_key^temp;
-    }
-
-    void print_table_view(uint64_t party_bit_map=0xFFFFFFFFFFFFFFFF){
-        //print each party's table simulate attacker's view
-        node* current;
-        for(int i=0;i<64;i++){
-            if((party_bit_map & (uint64_t)(1<<i))!=0){
-                current=&this->parties[i];
-                current->print_view();
-                cout<<endl;
-            }
+            this->parties[i].init(1024,256,i,verify_key);
         }
     }
 
@@ -302,7 +255,7 @@ class dv_hash{
         long id;
         for(int i=0;i<party_size;i++){
             current=&(this->parties[party_index[i]]);
-            id=current->func->eval(val,max_prime);
+            id=current->eval(val,max_prime);
             int debug=ph->lock[id];
             if(ph->lock[id]!=1){
                 hash_index[i]=id;
@@ -441,6 +394,16 @@ class dv_hash{
         delete[] this->parties;
     }
 };
+
+
+
+
+
+
+
+
+
+
 
 
 
