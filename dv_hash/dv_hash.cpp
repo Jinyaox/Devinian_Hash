@@ -3,7 +3,7 @@
 #include "helper.h"
 #include "crt.h"
 #include "xor.h"
-#include "Poly.h"
+#include "/Users/rudolphtorres/Desktop/xxHash/xxhash.h"
 #include <limits.h>
 #include <chrono>
 
@@ -188,24 +188,14 @@ class node{
     int prime_size;
     int key_size; //the degree of the polynomial 
     hash_table* table;
-    Poly* func;
+    XXH64_hash_t seed;
 
-
-    node(){}
-
-    void initialize(int key[],int n,int table_size, int p_size, short id){
-        //initialize all the function data!!! otherwise secret key gets a 0 sometimes
-        key_size=n;
-        func=new Poly(n-1,p_size); //beware the size if 256 whereas table is 1024
-        for(int i=0;i<n;i++){
-            func->setCoeff(key[i],i);
-        }
-
+    node(int table_size, int p_size, short id){
+        seed =(XXH64_hash_t) rand();
         secret_k=(uint64_t)rand()<<32|rand();
         index_key=(uint64_t)rand()<<32|rand();
         table=new hash_table(table_size);
         prime_size=p_size;
-
         this->ID=id;
     }
 
@@ -252,7 +242,6 @@ class node{
     }
 
     ~node(){
-        delete func;
         delete table;
     }
 };
