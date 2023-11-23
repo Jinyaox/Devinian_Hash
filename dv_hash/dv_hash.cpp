@@ -1,17 +1,13 @@
 #include <iostream>
 #include <stdlib.h>
-#include "helper.h"
 #include "crt.h"
 #include "xor.h"
-#include "../xxhash.h"
+#include "helper.h"
+#include "../xxHash/xxhash.h"
 #include <limits.h>
 #include <chrono>
 
-#define MAX_DEGREE 10
-#define INT_MAX 1000000000
-
-static int max_prime=0;
-
+//compile with clang++ dv_hash.cpp ../xxHash/libxxhash.0.8.2.dylib -o dv_hash_test
 
 typedef struct hash_store{
     uint8_t active;
@@ -128,11 +124,8 @@ class hash_table{
     }
 
     short retrieve(uint64_t out_key, int prime_remainder_pair[], uint64_t k_sum, XXH32_hash_t seed, uint64_t index_key){
-        short ret_val;
-        long temp=func->T;
-        func->T=t_size;
-         
-        long loc=func->eval((long)out_key,max_prime);
+
+        long loc=(uint64_t)XXH64(&out_key,8,seed) % t_size;
         uint64_t m_sum=hash[loc].m_sum;
         unsigned incre=1;
 
@@ -140,18 +133,14 @@ class hash_table{
             loc=(loc+(incre*incre))%t_size;
             incre++;
             if(incre>128){
-                func->T=temp;
                 return 0; //not expected to return 0;
             }
         }
-
         uint64_t final_answer=retrieval(out_key,hash[loc].sum_without_i,k_sum);
-
         final_answer=final_answer ^ index_key;
         prime_remainder_pair[0]=final_answer>>32;
         prime_remainder_pair[1]=final_answer & 0x00000000FFFFFFFF;
         //cout<<prime_remainder_pair[0]<<" "<<prime_remainder_pair[1]<<endl;
-        func->T=temp;
         return 1;
     }
 
@@ -234,7 +223,6 @@ class dv_hash{
 
     dv_hash(int parties, int degree=3){
         ph=new prime_hashes(256);
-        max_prime=ph->primes[255];
         this->parties= new node[parties];
 
         verify_key=(uint64_t)rand()<<32|rand();
@@ -255,7 +243,7 @@ class dv_hash{
         long id;
         for(int i=0;i<party_size;i++){
             current=&(this->parties[party_index[i]]);
-            id=current->eval(val,max_prime);
+            id=current->eval(val,256);
             int debug=ph->lock[id];
             if(ph->lock[id]!=1){
                 hash_index[i]=id;
@@ -293,7 +281,7 @@ class dv_hash{
                     hash_index[collision_substitute]++;
                 }
                 ph->lock[hash_index[collision_substitute]]=1;
-                collision_substitute++; //to avoid deadlock
+                collision_substitute++;
 
             }
             else{
@@ -301,7 +289,6 @@ class dv_hash{
                 revert=hash_index[place];
                 hash_index[place]++;
 
-                //logic issue and did we clear the lock?
                 while((ph->lock[hash_index[place]]==1)&&(hash_index[place]<(ph->size)-1)){
                     hash_index[place]++;
                 }
@@ -349,9 +336,8 @@ class dv_hash{
         for(int i=0;i<party_size;i++){
             current_idx=hash_index[i];
             if(current_idx!=-1){
-                current=&this->parties[party_index[i]]; //get the party associated with it
-                
-                if(current->can_store(sum_m^sum_key,sum_m,all_m[i])!=1){
+                current=&this->parties[party_index[i]]; //get the party associated with it                
+                if(current->can_store(sum_m^verify_key)==-1){
                     //local storage failure
                     return 0;
                 };
@@ -364,13 +350,13 @@ class dv_hash{
             current_idx=hash_index[i];
             if(current_idx!=-1){
                 current=&this->parties[party_index[i]]; //get the party associated with it
-                current->store(sum_m^sum_key,sum_m,all_m[i]);
+                current->store(current->can_store(sum_m^verify_key),sum_m^verify_key,sum_m,all_m[i]);
             }
             //else continue the next loop, the party is not being used yet
         }
     
         result[0]= gen_party_indexes(final_party,party_size); 
-        result[1]= sum_m ^ sum_key; //the out_key
+        result[1]= sum_m ^ verify_key; //the out_key
 
         return 1;
     }
@@ -380,7 +366,7 @@ class dv_hash{
         uint64_t primes[64],remainder[64];
         int counter=0; uint64_t lcm=1; uint64_t OLD_lcm=1; //prevent LCM overflow
         for(int i=0;i<64;i++){
-            if(this->parties[i].retrieve(out_key,parties,value_storage,this->sum_key)==1){
+            if(this->parties[i].retrieve(out_key,parties,value_storage,verify_key)==1){
                 remainder[counter]=value_storage[1]; 
                 primes[counter]=value_storage[0]; 
                 counter++;
