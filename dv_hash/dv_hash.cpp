@@ -101,12 +101,15 @@ class hash_table{
         memset(hash,0,sizeof(hash_store)*size);
     }
 
-    int can_store(XXH32_hash_t seed, uint64_t value){
+    int can_store(XXH32_hash_t seed, uint64_t value,uint64_t sum_m,uint64_t mi){
         short ret_val;
 
         long position=(uint64_t)XXH64(&value,8,seed) % t_size;
         long incre=1;
         while(hash[position].active!=0){
+            if((hash[position].m_sum=sum_m)&&(hash[position].sum_without_i=sum_m^mi)){
+                return position;
+            }
             position=(position+(incre*incre))%t_size;
             incre++;
             if(incre>128){
@@ -175,8 +178,8 @@ class node{
         return (int)((uint64_t) XXH64(&val,4,seed) % max_prime);
     }
 
-    int can_store(uint64_t out_key){
-        return table->can_store(seed,out_key);
+    int can_store(uint64_t out_key,uint64_t sum_m,uint64_t mi){
+        return table->can_store(seed,out_key,sum_m,mi);
     }
 
     short store(int loc,uint64_t out_key, uint64_t sum_m, uint64_t m){
@@ -337,7 +340,7 @@ class dv_hash{
             current_idx=hash_index[i];
             if(current_idx!=-1){
                 current=&this->parties[party_index[i]]; //get the party associated with it                
-                if(current->can_store(sum_m^verify_key)==-1){
+                if(current->can_store(sum_m^verify_key,sum_m,all_m[i])==-1){
                     //local storage failure
                     return 0;
                 };
@@ -350,13 +353,13 @@ class dv_hash{
             current_idx=hash_index[i];
             if(current_idx!=-1){
                 current=&this->parties[party_index[i]]; //get the party associated with it
-                current->store(current->can_store(sum_m^verify_key),sum_m^verify_key,sum_m,all_m[i]);
+                current->store(current->can_store(sum_m^verify_key,sum_m,all_m[i]),sum_m^verify_key,sum_m,all_m[i]);
             }
             //else continue the next loop, the party is not being used yet
         }
     
         result[0]= gen_party_indexes(final_party,party_size); 
-        result[1]= sum_m ^ verify_key; //the out_key
+        result[1]= sum_m ^ verify_key;
 
         return 1;
     }
@@ -446,18 +449,21 @@ void retrieve_test(int amount=512){
     for(int i=0;i<512;i++){
         group_num=gen_rand_test_group(pt_idx);
         uint32_t val= rand();
+        cout<<val<<endl;
         hash_t.store(pt_idx,group_num,val,res);
         cache[i].bitmap=res[0];
         cache[i].outkey=res[1];
     }
 
+    cout<<endl<<endl;
     for(int loop=0;loop<10;loop++){
         std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
         for(int i=0;i<pow(2,loop);i++){
-            hash_t.retrieve(cache[i].bitmap,cache[i].outkey);
+            cout<<hash_t.retrieve(cache[i].bitmap,cache[i].outkey)<<endl;
+            
         }
         std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-        std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+        //std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
 }
 
