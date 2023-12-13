@@ -3,7 +3,30 @@
         {
             "type": "cppbuild",
             "label": "C/C++: clang++ 建置使用中檔案",
-            "command": "/usr/bin/clang++",
+            "command": "clang++",
+            "args": [
+                "${file}",
+                "--debug",
+                "/Users/xuian/Desktop/Devinian_Hash/xxHash/libxxhash.0.8.2.dylib",
+                "-o",
+                "${fileDirname}/${fileBasenameNoExtension}",
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "偵錯工具產生的工作。"
+        },
+        {
+            "type": "cppbuild",
+            "label": "C/C++: clang 建置使用中檔案",
+            "command": "/usr/bin/clang",
             "args": [
                 "-fcolor-diagnostics",
                 "-fansi-escape-codes",
@@ -18,10 +41,7 @@
             "problemMatcher": [
                 "$gcc"
             ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
+            "group": "build",
             "detail": "偵錯工具產生的工作。"
         }
     ],

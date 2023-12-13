@@ -23,11 +23,6 @@ uint64_t get_hashed_share(uint64_t priviate_key, uint64_t coordinate){
     return coordinate ^ priviate_key;
 }
 
-uint64_t retrieval(uint64_t hash_cluster, uint64_t share_sum, uint64_t keysum){
-    //share_sum is the M0-n except its own m;
-    return (hash_cluster ^ share_sum) ^ keysum;
-}
-
 uint64_t gen_party_indexes(int hash_index[], int party_num){ //100100 means party 5, 2 are present
     //the parties give its indexes
     uint64_t result=0;

@@ -3,22 +3,22 @@
 #include "crt.h"
 #include "xor.h"
 #include "helper.h"
+#include "cuckoo.cpp"
 #include "../xxHash/xxhash.h"
 #include <limits.h>
 #include <chrono>
 
-//compile with clang++ dv_hash.cpp ../xxHash/libxxhash.0.8.2.dylib -o dv_hash_test
-
-typedef struct hash_store{
-    uint8_t active;
-    uint64_t m_sum;
-    uint64_t sum_without_i;
-}hash_store;
+//compile with clang++ dv_hash_Cuckoo.cpp ../xxHash/libxxhash.0.8.2.dylib -o dv_cuckoo
 
 typedef struct receipt{
     uint64_t bitmap;
     uint64_t outkey;
 }receipt;
+
+typedef struct storage_info{
+    short table;
+    int location;
+}storage_info;
 
 
 int cmpfunc_min (const void * a, const void * b) {
@@ -88,109 +88,54 @@ class prime_hashes{
     }
 };
 
-class hash_table{
-    public: 
-    hash_store* hash;
-    int t_size;
-
-    int current_value;
-
-    hash_table(unsigned size){
-        this->t_size=size;
-        hash= new hash_store[size];
-        memset(hash,0,sizeof(hash_store)*size);
-    }
-
-    int can_store(XXH64_hash_t seed, uint64_t value,uint64_t sum_m,uint64_t mi){
-        short ret_val;
-        long position=(uint64_t)XXH64(&value,8,seed) % t_size;
-        long incre=1;
-        while(hash[position].active!=0){
-            if((hash[position].m_sum==sum_m)&&(hash[position].sum_without_i^hash[position].m_sum^(uint64_t)seed==mi)){
-                return position;
-            }
-            position=(position+(incre*incre))%t_size;
-            incre++;
-            if(incre>128){
-                return -1;
-            }
-        }
-        return position;
-    }
-
-    short store(int position, uint64_t value, uint64_t m_sum, uint64_t m_withou_i){
-        hash[position].m_sum=m_sum;
-        hash[position].sum_without_i=m_withou_i;
-        hash[position].active=1;
-        return 1;
-    }
-
-    short retrieve(uint64_t out_key, int prime_remainder_pair[], uint64_t verifier, XXH64_hash_t seed, uint64_t mask){
-
-        long loc=(uint64_t)XXH64(&out_key,8,seed) % t_size;
-        uint64_t m_sum=hash[loc].m_sum^(uint64_t)seed^mask;
-        unsigned incre=1;
-
-        while((out_key^m_sum)!=verifier){
-            loc=(loc+(incre*incre))%t_size;
-            incre++;
-            m_sum=hash[loc].m_sum^(uint64_t)seed^mask;
-            if(incre>128){
-                return 0; //not expected to return 0;
-            }
-        }
-        uint64_t final_answer=m_sum^(hash[loc].sum_without_i);
-        final_answer=final_answer ^ mask;
-        prime_remainder_pair[0]=final_answer>>32;
-        prime_remainder_pair[1]=final_answer & 0x00000000FFFFFFFF;
-        return 1;
-    }
-
-    ~hash_table(){
-        delete[] hash;
-    }
-};
-
 class node{
     public:
     uint64_t index_key; //the mask thing for m1 m2 m3 hash (a mask)
+    uint64_t verifier;
     short ID;
     int place;
     int prime_size;
-    int key_size; //the degree of the polynomial 
-    hash_table* table;
-    XXH64_hash_t seed;
+    CuckooHash* table;
+    XXH64_hash_t seed1;
+    XXH64_hash_t seed2;
 
     node(){
-        seed =(XXH64_hash_t) rand();
+        seed1 =(XXH64_hash_t) rand();
+        seed2 =(XXH64_hash_t) rand();
     }
 
-    void init(int table_size, int p_size, short id, uint64_t index_key){
+    void init(int table_size, int p_size, short id, uint64_t verifier){
         this->ID=id;
-        this->index_key=index_key;
-        table=new hash_table(table_size);
+        this->index_key=(uint64_t)rand()<<32|rand();;
         prime_size=p_size;
+        this->verifier=verifier;
+        table=new CuckooHash(table_size,seed1,seed2,verifier,index_key);
+        table->InitHashTable();
     }
 
     int eval(int val,int max_prime){
-        return (int)((uint64_t) XXH64(&val,4,seed) % max_prime);
+        return (int)((uint64_t) XXH64(&val,4,seed1) % max_prime);
     }
 
-    int can_store(uint64_t out_key,uint64_t sum_m,uint64_t mi){
-        this->place=table->can_store(seed,out_key,sum_m^(uint64_t)seed^index_key,mi);
-        return this->place;
+    int store(uint64_t out_key, uint64_t sum_m, uint64_t m,short* tab){
+        return table->Insert(out_key,sum_m^m,tab);
     }
 
-    short store(int loc,uint64_t out_key, uint64_t sum_m, uint64_t m){
-        return table->store(loc,out_key,sum_m^(uint64_t)seed^index_key,sum_m^m);
-    }
-
-    short retrieve(uint64_t out_key, uint64_t index, int prime_remainder_pair[], uint64_t k_sum){
+    short retrieve(uint64_t out_key, uint64_t index, int prime_remainder_pair[]){
         //store the result in prime remainder pair if valid, else return 0
 
         uint64_t mask=((uint64_t)1)<<this->ID;
         if((index&mask)==0){return 0;} //not your turn
-        return this->table->retrieve(out_key,prime_remainder_pair,k_sum,seed,this->index_key);
+        hash_store* res=table->retrieve(out_key);
+
+        if (res !=NULL){
+            hash_store result=*res;
+            uint64_t piri=result.m_sum^seed1^result.sum_without_i; //this contains a bug
+            prime_remainder_pair[0]=piri>>32;
+            prime_remainder_pair[1]=piri & 0x00000000FFFFFFFF;
+            return 1;
+        }
+        return 0;
     }
 
     //finish the retrieve function requires k_sum, m_sum, 
@@ -199,8 +144,13 @@ class node{
         uint64_t prime=ph->primes[idx];
         uint64_t remainder=val%prime;
         uint64_t piri=(prime<<32|remainder);
+        //cout<<piri<<endl;
         uint64_t res=piri ^ index_key;
         return res;
+    }
+
+    void remove(int table_idx,int loc){
+        this->table->remove(table_idx-1,loc);
     }
 
     ~node(){
@@ -225,6 +175,16 @@ class dv_hash{
         verify_key=(uint64_t)rand()<<32|rand();
         for(int i=0;i<parties;i++){
             this->parties[i].init(1024,256,i,verify_key);
+        }
+    }
+
+    void revert(storage_info* storage, int party_size){
+        node* current;
+        for(int i=0;i<party_size;i++){
+            if((storage[i].table!=0)&&(storage[i].location!=0)){
+                current=&this->parties[i];
+                current->remove(storage[i].table,storage[i].location);
+            }
         }
     }
 
@@ -322,27 +282,21 @@ class dv_hash{
                 all_m[i]=current->gen_m(ph,current_idx,val);
             }
         }
+
         uint64_t sum_m=gen_sum_m(all_m,party_size);
+        storage_info* storage=new storage_info[party_size];
         
         //check if individual hash table has issues 
         for(int i=0;i<party_size;i++){
             current_idx=hash_index[i];
             if(current_idx!=-1){
-                current=&this->parties[party_index[i]]; //get the party associated with it                
-                if(current->can_store(sum_m^verify_key,sum_m,all_m[i])==-1){
-                    //local storage failure
-                    return 0;
-                };
-            }
-            //else continue the next loop, the party is not being used yet
-        }
-
-        //now we finally store something
-        for(int i=0;i<party_size;i++){
-            current_idx=hash_index[i];
-            if(current_idx!=-1){
-                current=&this->parties[party_index[i]]; //get the party associated with it
-                current->store(current->place,sum_m^verify_key,sum_m,all_m[i]);
+                current=&this->parties[party_index[i]]; //get the party associated with it 
+                storage[i].location=current->store(sum_m^verify_key,sum_m,all_m[i],&storage[i].table);              
+                if(storage[i].location==-1){
+                    this->revert(storage,party_size);
+                    delete[] storage;
+                    return -1;
+                }
             }
             //else continue the next loop, the party is not being used yet
         }
@@ -350,15 +304,17 @@ class dv_hash{
         result[0]= gen_party_indexes(final_party,party_size); 
         result[1]= sum_m ^ verify_key;
 
+        delete[] storage;
         return 1;
     }
 
+    //needs to fix this
     uint64_t retrieve(uint64_t parties, uint64_t out_key){
         int value_storage[]={0,0};
-        uint64_t primes[64],remainder[64];
+        uint64_t primes[64],remainder[64]; //1522395419
         int counter=0; uint64_t lcm=1; uint64_t OLD_lcm=1; //prevent LCM overflow
         for(int i=0;i<64;i++){
-            if(this->parties[i].retrieve(out_key,parties,value_storage,verify_key)==1){
+            if(this->parties[i].retrieve(out_key,parties,value_storage)==1){
                 remainder[counter]=value_storage[1]; 
                 primes[counter]=value_storage[0]; 
                 counter++;
@@ -433,26 +389,24 @@ void retrieve_test(int amount=512){
     int group_num;
     int pt_idx[64]; memset(pt_idx,0,64*sizeof(int));
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
-    receipt cache[512];
+    receipt cache[1024];
     
-    for(int i=0;i<128;i++){
+    for(int i=0;i<512;i++){
         group_num=gen_rand_test_group(pt_idx);
         uint32_t val= rand();
-        cout<<val<<endl;
+        //cout<<val<<endl;
         hash_t.store(pt_idx,group_num,val,res);
-        cache[i].bitmap=res[0];
-        cache[i].outkey=res[1];
+        // cache[i].bitmap=res[0];
+        // cache[i].outkey=res[1];
+        // cout<<(hash_t.retrieve(cache[i].bitmap,cache[i].outkey)==val)<<endl;
     }
-
-    cout<<endl<<endl;
     for(int loop=0;loop<1;loop++){
         std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-        for(int i=0;i<128;i++){
-            cout<<hash_t.retrieve(cache[i].bitmap,cache[i].outkey)<<endl;
-            
+        for(int i=0;i<512;i++){
+            hash_t.retrieve(cache[i].bitmap,cache[i].outkey);
         }
         std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-        // std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+        std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
 }
 
