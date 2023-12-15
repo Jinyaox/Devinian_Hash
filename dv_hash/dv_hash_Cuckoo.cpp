@@ -20,23 +20,6 @@ typedef struct storage_info{
     int location;
 }storage_info;
 
-
-int cmpfunc_min (const void * a, const void * b) {
-   return -( *(int*)a - *(int*)b );
-}
-
-/*helper functions*/
-long find_max(int array[],int table_size, int computation_size){
-   qsort(array, table_size, sizeof(int), cmpfunc_min); 
-
-   long product=0;
-
-   for(int i=0;i<computation_size;i++){
-    product=product*array[i];
-   }
-   return product;
-}
-
 class prime_hashes{
     public:
     
@@ -201,7 +184,6 @@ class dv_hash{
         for(int i=0;i<party_size;i++){
             current=&(this->parties[party_index[i]]);
             id=current->eval(val,256);
-            int debug=ph->lock[id];
             if(ph->lock[id]!=1){
                 hash_index[i]=id;
                 ph->lock[id]=1;
@@ -219,7 +201,8 @@ class dv_hash{
 
         while(ph->can_gen(hash_index,val,party_size)==0){ //see if the current hash indexes are sufficiently large
 
-            if(place>=party_size){ //exhausted all the possible existing parties
+            if(place>=party_size){ 
+                cout<<1<<endl;
                 debug = collision[collision_substitute];
 
                 while(debug==-1){ //find the next 
@@ -391,22 +374,19 @@ void retrieve_test(int amount=512){
     uint64_t res[2]; memset(res,0,2*sizeof(uint64_t));
     receipt cache[1024];
     
-    for(int i=0;i<512;i++){
+    for(int i=0;i<1024;i++){
         group_num=gen_rand_test_group(pt_idx);
         uint32_t val= rand();
         //cout<<val<<endl;
         hash_t.store(pt_idx,group_num,val,res);
-        // cache[i].bitmap=res[0];
-        // cache[i].outkey=res[1];
-        // cout<<(hash_t.retrieve(cache[i].bitmap,cache[i].outkey)==val)<<endl;
     }
-    for(int loop=0;loop<1;loop++){
+    for(int loop=9;loop<10;loop++){
         std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-        for(int i=0;i<512;i++){
+        for(int i=0;i<(2<<loop);i++){
             hash_t.retrieve(cache[i].bitmap,cache[i].outkey);
         }
         std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-        std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+        //std::cout << "Time difference for " << (2<<loop) << " = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
 }
 
